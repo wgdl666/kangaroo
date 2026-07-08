@@ -1,16 +1,6 @@
-# bizerror
+# bizerr
 
-`bizerror` is a small Go package for typed business errors.
-
-It keeps the common fields that service responses usually need:
-
-- numeric business code
-- human-readable message
-- stable/unstable marker
-- wrapped cause
-- optional error chain
-- optional stack trace
-- extra key-value data
+`bizerr` is a small Go package for business errors with a code, stack, and wrapped cause.
 
 The package has no runtime dependencies and does not depend on any RPC framework.
 
@@ -31,29 +21,21 @@ import (
 	"github.com/wgdl666/kangaroo/bizerr"
 )
 
-var InternalError = bizerror.NewBuilder[int32]().
-	SetCode(50001).
-	SetMessage("internal error").
-	SetStable(false).
-	Build()
-
 func main() {
-	err := InternalError.
-		WithMessageAndStack("create order failed").
-		Errorf("db timeout")
+	cause := fmt.Errorf("db timeout")
+	err := bizerr.Wrap(50001, cause, "create order failed")
 
-	code, ok := bizerror.ParseCode(err)
+	code, ok := bizerr.Code(err)
 	fmt.Println(code, ok)
-	fmt.Println(bizerror.ParseMessage(err))
+	fmt.Println(bizerr.Message(err))
+	fmt.Println(bizerr.Stack(err))
 }
 ```
 
 ## API
 
-- `NewBuilder[T]()` builds reusable business error definitions from integer-like code types.
-- `WithMessage(message)` returns a cloned error with a new message.
-- `WithMessageAndStack(message)` returns a cloned error with a new message and current stack.
-- `Errorf(format, args...)` appends detail to the error chain and records the first cause.
-- `ChainWith(err, format, args...)` appends context to a `BizError`, or wraps ordinary errors.
-- `ParseCode(err)` extracts a business code when the error contains a `BizError`.
-- `ParseMessage(err)` extracts the business message when possible.
+- `New(code, message)` creates an error and records the current stack.
+- `Errorf(code, format, args...)` creates a formatted error and records the current stack.
+- `Wrap(code, err, message)` wraps a cause with `%w` semantics and records the current stack.
+- `Wrapf(code, err, format, args...)` wraps a cause with a formatted message.
+- `Code(err)`, `Message(err)`, and `Stack(err)` extract fields from any wrapped `bizerr.Error`.
