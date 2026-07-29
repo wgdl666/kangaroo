@@ -58,3 +58,23 @@ func TestMustInitInvalidEnvPanics(t *testing.T) {
 	}()
 	MustInit()
 }
+
+func TestMustInitSG(t *testing.T) {
+	resetGlobals()
+	withEnv(t, "wg.mirror.hub", "prod", RegionSG)
+	MustInit()
+	if Region != RegionSG || !IsSG() || IsCN() {
+		t.Fatalf("region flags: Region=%q IsSG=%v IsCN=%v", Region, IsSG(), IsCN())
+	}
+}
+
+func TestMustInitInvalidRegionPanics(t *testing.T) {
+	resetGlobals()
+	withEnv(t, "wg.mirror.hub", "prod", "US")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	MustInit()
+}

@@ -6,7 +6,7 @@
 |----------|---------|---------|
 | `XX_WG_PSM` | Product / Service Module | `wg.mirror.hub` |
 | `XX_WG_ENV` | Deployment environment (`prod` or `ppe_*`) | `ppe_mirror_zby` |
-| `XX_WG_REGION` | Deploy region | `CN` |
+| `XX_WG_REGION` | Deploy region (`CN` or `SG`) | `CN` |
 
 No runtime dependencies.
 
@@ -30,7 +30,7 @@ import (
 func main() {
 	env.MustInit()
 	fmt.Println(env.PSM, env.Env, env.Region)
-	fmt.Println(env.IsPPE(), env.IsProd())
+	fmt.Println(env.IsPPE(), env.IsProd(), env.IsCN(), env.IsSG())
 }
 ```
 
@@ -38,5 +38,5 @@ func main() {
 
 - `MustInit()` reads and validates the three variables into package globals; panics on failure.
 - Globals: `PSM`, `Env`, `Region`.
-- `Validate()` / `IsProd()` / `IsPPE()` helpers.
-- Constants: `KeyPSM`, `KeyEnv`, `KeyRegion`, `EnvProd`, `EnvPPEPrefix`.
+- `Validate()` / `IsProd()` / `IsPPE()` / `IsCN()` / `IsSG()` helpers.
+- Constants: `KeyPSM`, `KeyEnv`, `KeyRegion`, `EnvProd`, `EnvPPEPrefix`, `RegionCN`, `RegionSG`.
