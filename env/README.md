@@ -38,6 +38,5 @@ func main() {
 
 - `MustInit()` reads and validates the three variables into package globals; panics on failure.
 - Globals: `PSM`, `Env`, `Region`.
-- `IsProd()` / `IsPPE()` helpers (also methods on `Vars`).
-- `Vars.Validate()` for validating a custom `Vars` value.
+- `Validate()` / `IsProd()` / `IsPPE()` helpers.
 - Constants: `KeyPSM`, `KeyEnv`, `KeyRegion`, `EnvProd`, `EnvPPEPrefix`.

@@ -1,33 +1,17 @@
 # configcenter
 
-Go SDK for pulling published configs from **Config Center**.
+Config Center 客户端：只提供两个泛型拉取接口。
 
-Implements the client-side conventions from wgDevLab `XX_WG_ENV.md`:
+- `GetConfig[T]` → 应用配置（settings）解码为 `T`
+- `GetSecrets[T]` → 密钥配置（secrets）解码为 `T`
 
-1. Address bundles with `XX_WG_PSM` + `XX_WG_ENV`
-2. If `ppe_*` has no published config → fall back to same PSM's `prod`
-3. Poll every **5s** with `If-None-Match` / ETag
-4. Optional SDK heartbeat (`POST .../sdk/heartbeat`)
+每次拉取自动使用当前 [`kangaroo/env`](../env) 的 `PSM` / `Env` / `Region`；`ppe_*` 无配置时回退同一 PSM 的 `prod`。若 bundle 含 `xx_wg.region`，会与 `env.Region` 校验一致。
 
 ## Install
 
 ```sh
 go get github.com/wgdl666/kangaroo/configcenter
 ```
-
-## Environment
-
-| Variable | Required | Meaning |
-|----------|----------|---------|
-| `XX_WG_PSM` | yes* | Product/Service Module |
-| `XX_WG_ENV` | yes* | `prod` or `ppe_*` |
-| `XX_WG_REGION` | yes* | Region (e.g. `CN`) |
-| `XX_WG_CONFIG_CENTER_URL` | yes† | Config Center base URL |
-| `XX_WG_CONFIG_CENTER_TOKEN` | no | SDK bearer (`CONFIG_CENTER_SDK_TOKEN`) |
-| `XX_WG_INSTANCE_ID` | no | Heartbeat instance id (default: hostname) |
-
-\* via [`kangaroo/env`](../env) globals (`env.MustInit`) unless you pass `Options.Vars`  
-† or `Options.BaseURL`
 
 ## Usage
 
@@ -39,31 +23,45 @@ import (
 	"log"
 
 	"github.com/wgdl666/kangaroo/configcenter"
+	"github.com/wgdl666/kangaroo/env"
 )
 
+type AppConfig struct {
+	Port int `json:"port"`
+	XXWG struct {
+		Region string `json:"region"`
+	} `json:"xx_wg"`
+}
+
+type AppSecrets struct {
+	PostgresDSN string `json:"POSTGRES_DSN"`
+	S3AccessKey string `json:"S3_ACCESS_KEY"`
+}
+
 func main() {
-	c, err := configcenter.New(configcenter.Options{
-		// BaseURL / Token / Vars can also come from XX_WG_* env vars.
-		OnUpdate: func(s configcenter.Snapshot) {
-			log.Printf("config gen=%d fallback=%v", s.Bundle.Generation, s.Fallback)
-		},
+	env.MustInit()
+	configcenter.MustInit(configcenter.Options{
+		BaseURL: "http://127.0.0.1:8096",
 	})
+
+	cfg, err := configcenter.GetConfig[AppConfig](context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := c.Start(context.Background()); err != nil {
+	secrets, err := configcenter.GetSecrets[AppSecrets](context.Background())
+	if err != nil {
 		log.Fatal(err)
 	}
-	defer c.Stop()
-
-	snap, _ := c.Current()
-	region, _ := snap.Setting("xx_wg.region")
-	log.Println("region", region)
+	log.Println(cfg.Port, secrets.PostgresDSN)
 }
 ```
 
+也可用 `GetConfig[map[string]any]` / `GetSecrets[map[string]string]`。
+
 ## API
 
-- `New(Options)` / `Start` / `Stop` / `Fetch` / `Current`
-- `Snapshot.Setting("a.b")` / `Snapshot.Secret(key)`
-- `DefaultPollInterval` = 5s
+| Func | 说明 |
+|------|------|
+| `MustInit(Options)` | 设置 Config Center 地址（及可选 Token）；失败 panic |
+| `GetConfig[T](ctx)` | 拉取并解码应用配置 |
+| `GetSecrets[T](ctx)` | 拉取并解码密钥配置 |

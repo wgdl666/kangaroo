@@ -28,41 +28,36 @@ var (
 	Region string // XX_WG_REGION, e.g. CN
 )
 
-// Vars holds the three platform environment variables.
-type Vars struct {
-	PSM    string // XX_WG_PSM, e.g. wg.mirror.hub
-	Env    string // XX_WG_ENV: prod | ppe_*
-	Region string // XX_WG_REGION, e.g. CN
-}
-
 // MustInit reads XX_WG_PSM / XX_WG_ENV / XX_WG_REGION into package globals.
 // Panics if any value is missing or invalid.
 func MustInit() {
-	v := Vars{
-		PSM:    strings.TrimSpace(os.Getenv(KeyPSM)),
-		Env:    strings.TrimSpace(os.Getenv(KeyEnv)),
-		Region: strings.TrimSpace(os.Getenv(KeyRegion)),
-	}
-	if err := v.Validate(); err != nil {
+	psm := strings.TrimSpace(os.Getenv(KeyPSM))
+	environment := strings.TrimSpace(os.Getenv(KeyEnv))
+	region := strings.TrimSpace(os.Getenv(KeyRegion))
+	if err := validate(psm, environment, region); err != nil {
 		panic(err)
 	}
-	PSM = v.PSM
-	Env = v.Env
-	Region = v.Region
+	PSM = psm
+	Env = environment
+	Region = region
 }
 
-// Validate checks PSM / Env / Region conventions.
-func (v Vars) Validate() error {
-	if v.PSM == "" {
+// Validate checks package globals against PSM / Env / Region conventions.
+func Validate() error {
+	return validate(PSM, Env, Region)
+}
+
+func validate(psm, environment, region string) error {
+	if psm == "" {
 		return fmt.Errorf("%s is required", KeyPSM)
 	}
-	if v.Env == "" {
+	if environment == "" {
 		return fmt.Errorf("%s is required", KeyEnv)
 	}
-	if v.Env != EnvProd && !strings.HasPrefix(v.Env, EnvPPEPrefix) {
-		return fmt.Errorf("%s must be %q or start with %q (got %q)", KeyEnv, EnvProd, EnvPPEPrefix, v.Env)
+	if environment != EnvProd && !strings.HasPrefix(environment, EnvPPEPrefix) {
+		return fmt.Errorf("%s must be %q or start with %q (got %q)", KeyEnv, EnvProd, EnvPPEPrefix, environment)
 	}
-	if v.Region == "" {
+	if region == "" {
 		return fmt.Errorf("%s is required", KeyRegion)
 	}
 	return nil
@@ -73,9 +68,3 @@ func IsProd() bool { return Env == EnvProd }
 
 // IsPPE reports whether Env is an online test (ppe_*) environment.
 func IsPPE() bool { return strings.HasPrefix(Env, EnvPPEPrefix) }
-
-// IsProd reports whether Env is the production environment.
-func (v Vars) IsProd() bool { return v.Env == EnvProd }
-
-// IsPPE reports whether Env is an online test (ppe_*) environment.
-func (v Vars) IsPPE() bool { return strings.HasPrefix(v.Env, EnvPPEPrefix) }

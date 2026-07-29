@@ -1,144 +1,107 @@
 package configcenter
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
+
+	"github.com/wgdl666/kangaroo/env"
 )
 
-func (c *Client) fetchBundle(ctx context.Context, environment, etag string) (Bundle, string, bool, error) {
-	u := c.bundleURL(environment)
+type bundle struct {
+	PSM         string            `json:"psm"`
+	Environment string            `json:"environment"`
+	ReleaseID   string            `json:"release_id"`
+	Generation  int64             `json:"generation"`
+	ETag        string            `json:"etag"`
+	Settings    map[string]any    `json:"settings"`
+	Secrets     map[string]string `json:"secrets"`
+}
+
+func fetchBundle(ctx context.Context) (bundle, error) {
+	baseURL, tok, client, err := clientState()
+	if err != nil {
+		return bundle{}, err
+	}
+	psm, environment, region, err := platform()
+	if err != nil {
+		return bundle{}, err
+	}
+
+	b, err := getBundle(ctx, client, baseURL, tok, psm, environment)
+	if err == nil {
+		return b, matchRegion(b, region)
+	}
+	if !errors.Is(err, ErrNotFound) || !env.IsPPE() {
+		return bundle{}, err
+	}
+
+	b, err = getBundle(ctx, client, baseURL, tok, psm, env.EnvProd)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return bundle{}, fmt.Errorf("configcenter: no published config for %s/%s (and prod fallback missing): %w", psm, environment, err)
+		}
+		return bundle{}, err
+	}
+	return b, matchRegion(b, region)
+}
+
+func getBundle(ctx context.Context, client *http.Client, baseURL, tok, psm, environment string) (bundle, error) {
+	u := strings.TrimRight(baseURL, "/") + "/api/v1/psms/" +
+		url.PathEscape(psm) + "/envs/" + url.PathEscape(environment) + "/bundle"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return Bundle{}, "", false, err
+		return bundle{}, err
 	}
-	c.applyAuth(req)
-	if etag != "" {
-		req.Header.Set("If-None-Match", etag)
+	if tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("X-Config-Token", tok)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		return Bundle{}, "", false, err
+		return bundle{}, err
 	}
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
-	case http.StatusNotModified:
-		return Bundle{}, resp.Header.Get("ETag"), true, nil
 	case http.StatusNotFound:
-		return Bundle{}, "", false, ErrNotFound
+		return bundle{}, ErrNotFound
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return Bundle{}, "", false, ErrUnauthorized
+		return bundle{}, ErrUnauthorized
 	case http.StatusOK:
-		// continue
+		// ok
 	default:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return Bundle{}, "", false, fmt.Errorf("configcenter: get bundle: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return bundle{}, fmt.Errorf("configcenter: get bundle: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return Bundle{}, "", false, err
+		return bundle{}, err
 	}
-	var b Bundle
+	var b bundle
 	if err := json.Unmarshal(raw, &b); err != nil {
-		return Bundle{}, "", false, fmt.Errorf("configcenter: decode bundle: %w", err)
+		return bundle{}, fmt.Errorf("configcenter: decode bundle: %w", err)
 	}
-	outETag := resp.Header.Get("ETag")
-	if outETag == "" {
-		outETag = b.ETag
-	}
-	if b.ETag == "" {
-		b.ETag = outETag
-	}
-	return b, outETag, false, nil
+	return b, nil
 }
 
-func (c *Client) postHeartbeat(ctx context.Context, snap Snapshot, loadOK bool, lastErr string) error {
-	if c.opts.InstanceID == "" {
+// matchRegion checks settings.xx_wg.region against env.Region when present.
+func matchRegion(b bundle, region string) error {
+	v, ok := getPath(b.Settings, "xx_wg.region")
+	if !ok {
 		return nil
 	}
-	payload := map[string]any{
-		"instance_id": c.opts.InstanceID,
-		"release_id":  snap.Bundle.ReleaseID,
-		"generation":  snap.Bundle.Generation,
-		"load_ok":     loadOK,
-		"last_error":  truncate(lastErr, 200),
+	got := strings.TrimSpace(fmt.Sprint(v))
+	if got == "" || got == region {
+		return nil
 	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	// Heartbeat always reports against the requested XX_WG_ENV path.
-	u := strings.TrimRight(c.opts.BaseURL, "/") + "/api/v1/psms/" +
-		url.PathEscape(c.vars.PSM) + "/envs/" + url.PathEscape(c.vars.Env) + "/sdk/heartbeat"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(raw))
-	if err != nil {
-		return err
-	}
-	c.applyAuth(req)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<10))
-		return fmt.Errorf("configcenter: heartbeat: %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
-
-func (c *Client) bundleURL(environment string) string {
-	return strings.TrimRight(c.opts.BaseURL, "/") + "/api/v1/psms/" +
-		url.PathEscape(c.vars.PSM) + "/envs/" + url.PathEscape(environment) + "/bundle"
-}
-
-func (c *Client) applyAuth(req *http.Request) {
-	if c.opts.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.opts.Token)
-		req.Header.Set("X-Config-Token", c.opts.Token)
-	}
-}
-
-func defaultInstanceID() string {
-	if v := strings.TrimSpace(os.Getenv(KeyInstanceID)); v != "" {
-		return v
-	}
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		return "unknown"
-	}
-	return host
-}
-
-func truncate(s string, n int) string {
-	s = strings.TrimSpace(s)
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
-}
-
-// Setting reads a dotted path from Snapshot.Settings (e.g. "xx_wg.region").
-func (s Snapshot) Setting(path string) (any, bool) {
-	return getPath(s.Bundle.Settings, path)
-}
-
-// Secret returns a secret by key.
-func (s Snapshot) Secret(key string) (string, bool) {
-	if s.Bundle.Secrets == nil {
-		return "", false
-	}
-	v, ok := s.Bundle.Secrets[key]
-	return v, ok
+	return fmt.Errorf("configcenter: region mismatch: env=%s bundle.xx_wg.region=%s", region, got)
 }
 
 func getPath(m map[string]any, path string) (any, bool) {
