@@ -21,6 +21,13 @@ const (
 	EnvPPEPrefix = "ppe_"
 )
 
+// Package-level platform env, populated by MustInit.
+var (
+	PSM    string // XX_WG_PSM, e.g. wg.mirror.hub
+	Env    string // XX_WG_ENV: prod | ppe_*
+	Region string // XX_WG_REGION, e.g. CN
+)
+
 // Vars holds the three platform environment variables.
 type Vars struct {
 	PSM    string // XX_WG_PSM, e.g. wg.mirror.hub
@@ -28,27 +35,20 @@ type Vars struct {
 	Region string // XX_WG_REGION, e.g. CN
 }
 
-// Load reads XX_WG_PSM / XX_WG_ENV / XX_WG_REGION from the process environment
-// and validates them. Missing or invalid values return an error.
-func Load() (Vars, error) {
+// MustInit reads XX_WG_PSM / XX_WG_ENV / XX_WG_REGION into package globals.
+// Panics if any value is missing or invalid.
+func MustInit() {
 	v := Vars{
 		PSM:    strings.TrimSpace(os.Getenv(KeyPSM)),
 		Env:    strings.TrimSpace(os.Getenv(KeyEnv)),
 		Region: strings.TrimSpace(os.Getenv(KeyRegion)),
 	}
 	if err := v.Validate(); err != nil {
-		return Vars{}, err
-	}
-	return v, nil
-}
-
-// MustLoad is like Load but panics on error.
-func MustLoad() Vars {
-	v, err := Load()
-	if err != nil {
 		panic(err)
 	}
-	return v
+	PSM = v.PSM
+	Env = v.Env
+	Region = v.Region
 }
 
 // Validate checks PSM / Env / Region conventions.
@@ -67,6 +67,12 @@ func (v Vars) Validate() error {
 	}
 	return nil
 }
+
+// IsProd reports whether Env is the production environment.
+func IsProd() bool { return Env == EnvProd }
+
+// IsPPE reports whether Env is an online test (ppe_*) environment.
+func IsPPE() bool { return strings.HasPrefix(Env, EnvPPEPrefix) }
 
 // IsProd reports whether Env is the production environment.
 func (v Vars) IsProd() bool { return v.Env == EnvProd }

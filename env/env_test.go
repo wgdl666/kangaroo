@@ -12,51 +12,49 @@ func withEnv(t *testing.T, psm, environment, region string) {
 	t.Setenv(KeyRegion, region)
 }
 
-func TestLoadOK(t *testing.T) {
+func resetGlobals() {
+	PSM, Env, Region = "", "", ""
+}
+
+func TestMustInitOK(t *testing.T) {
+	resetGlobals()
 	withEnv(t, "wg.mirror.hub", "ppe_mirror_zby", "CN")
-	v, err := Load()
-	if err != nil {
-		t.Fatal(err)
+	MustInit()
+	if PSM != "wg.mirror.hub" || Env != "ppe_mirror_zby" || Region != "CN" {
+		t.Fatalf("got PSM=%q Env=%q Region=%q", PSM, Env, Region)
 	}
-	if v.PSM != "wg.mirror.hub" || v.Env != "ppe_mirror_zby" || v.Region != "CN" {
-		t.Fatalf("got %+v", v)
-	}
-	if !v.IsPPE() || v.IsProd() {
-		t.Fatalf("ppe flags: IsPPE=%v IsProd=%v", v.IsPPE(), v.IsProd())
+	if !IsPPE() || IsProd() {
+		t.Fatalf("ppe flags: IsPPE=%v IsProd=%v", IsPPE(), IsProd())
 	}
 }
 
-func TestLoadProd(t *testing.T) {
+func TestMustInitProd(t *testing.T) {
+	resetGlobals()
 	withEnv(t, "wg.mirror.hub", "prod", "CN")
-	v, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !v.IsProd() || v.IsPPE() {
-		t.Fatalf("prod flags: IsProd=%v IsPPE=%v", v.IsProd(), v.IsPPE())
+	MustInit()
+	if !IsProd() || IsPPE() {
+		t.Fatalf("prod flags: IsProd=%v IsPPE=%v", IsProd(), IsPPE())
 	}
 }
 
-func TestLoadMissing(t *testing.T) {
-	os.Clearenv()
-	if _, err := Load(); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestLoadInvalidEnv(t *testing.T) {
-	withEnv(t, "wg.mirror.hub", "staging", "CN")
-	if _, err := Load(); err == nil {
-		t.Fatal("expected invalid env error")
-	}
-}
-
-func TestMustLoadPanics(t *testing.T) {
+func TestMustInitMissingPanics(t *testing.T) {
+	resetGlobals()
 	os.Clearenv()
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic")
 		}
 	}()
-	_ = MustLoad()
+	MustInit()
+}
+
+func TestMustInitInvalidEnvPanics(t *testing.T) {
+	resetGlobals()
+	withEnv(t, "wg.mirror.hub", "staging", "CN")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	MustInit()
 }

@@ -23,24 +23,21 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/wgdl666/kangaroo/env"
 )
 
 func main() {
-	v, err := env.Load()
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(v.PSM, v.Env, v.Region)
-	fmt.Println(v.IsPPE(), v.IsProd())
+	env.MustInit()
+	fmt.Println(env.PSM, env.Env, env.Region)
+	fmt.Println(env.IsPPE(), env.IsProd())
 }
 ```
 
 ## API
 
-- `Load()` reads and validates the three variables.
-- `MustLoad()` panics if validation fails.
-- `Vars.Validate()` / `IsProd()` / `IsPPE()` helpers.
+- `MustInit()` reads and validates the three variables into package globals; panics on failure.
+- Globals: `PSM`, `Env`, `Region`.
+- `IsProd()` / `IsPPE()` helpers (also methods on `Vars`).
+- `Vars.Validate()` for validating a custom `Vars` value.
 - Constants: `KeyPSM`, `KeyEnv`, `KeyRegion`, `EnvProd`, `EnvPPEPrefix`.
