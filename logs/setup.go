@@ -2,19 +2,25 @@ package logs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/global"
+	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config 统一描述服务日志的导出方式；业务服务只提供身份和部署配置，不自行拼装 slog handler。
@@ -30,8 +36,10 @@ type Config struct {
 
 // Logger 是服务侧唯一需要持有的日志器，slog 仅保留为 Kangaroo 的内部实现细节。
 type Logger struct {
-	inner       *slog.Logger
-	logProvider *sdklog.LoggerProvider
+	inner         *slog.Logger
+	logProvider   *sdklog.LoggerProvider
+	traceProvider *sdktrace.TracerProvider
+	tracer        trace.Tracer
 }
 
 var defaultLogger = &Logger{inner: slog.Default()}
@@ -55,6 +63,7 @@ func Setup(ctx context.Context, cfg Config) (*Logger, error) {
 		attribute.String("deployment.environment.name", cfg.Environment),
 	)
 	provider := sdklog.NewLoggerProvider(sdklog.WithResource(res))
+	traceProvider := sdktrace.NewTracerProvider(sdktrace.WithResource(res))
 	if strings.TrimSpace(cfg.Endpoint) != "" {
 		exporter, err := otlploghttp.New(ctx,
 			otlploghttp.WithEndpoint(cfg.Endpoint),
@@ -64,18 +73,39 @@ func Setup(ctx context.Context, cfg Config) (*Logger, error) {
 			_ = provider.Shutdown(ctx)
 			return nil, fmt.Errorf("logs: create OTLP exporter: %w", err)
 		}
+		traceExporter, err := otlptracehttp.New(ctx,
+			otlptracehttp.WithEndpoint(cfg.Endpoint),
+			otlptracehttp.WithHeaders(cfg.Headers),
+		)
+		if err != nil {
+			_ = provider.Shutdown(ctx)
+			return nil, fmt.Errorf("logs: create OTLP trace exporter: %w", err)
+		}
 		provider = sdklog.NewLoggerProvider(
 			sdklog.WithResource(res),
 			sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
 		)
+		traceProvider = sdktrace.NewTracerProvider(
+			sdktrace.WithResource(res),
+			sdktrace.WithBatcher(traceExporter),
+		)
 	}
 	global.SetLoggerProvider(provider)
+	otel.SetTracerProvider(traceProvider)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, propagation.Baggage{},
+	))
 
 	handlers := []slog.Handler{NewOtelHandler(provider.Logger(cfg.ServiceName), parseLevel(cfg.MinLevel))}
 	if cfg.Console {
 		handlers = append([]slog.Handler{slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})}, handlers...)
 	}
-	logger := &Logger{inner: slog.New(NewMultiHandler(handlers...)), logProvider: provider}
+	logger := &Logger{
+		inner:         slog.New(NewMultiHandler(handlers...)),
+		logProvider:   provider,
+		traceProvider: traceProvider,
+		tracer:        traceProvider.Tracer(cfg.ServiceName),
+	}
 	slog.SetDefault(logger.inner)
 	defaultLogger = logger
 	return logger, nil
@@ -114,10 +144,17 @@ func (l *Logger) WarnContext(ctx context.Context, msg string, args ...any) {
 
 // Shutdown 在服务退出前冲刷已批量缓存的日志。
 func (l *Logger) Shutdown(ctx context.Context) error {
-	if l == nil || l.logProvider == nil {
+	if l == nil {
 		return nil
 	}
-	return l.logProvider.Shutdown(ctx)
+	var errs []error
+	if l.logProvider != nil {
+		errs = append(errs, l.logProvider.Shutdown(ctx))
+	}
+	if l.traceProvider != nil {
+		errs = append(errs, l.traceProvider.Shutdown(ctx))
+	}
+	return errors.Join(errs...)
 }
 
 func parseLevel(value string) slog.Level {
