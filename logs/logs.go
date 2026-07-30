@@ -22,9 +22,12 @@ const LevelFatal slog.Level = slog.LevelError + 4
 // Entry 包装 slog.With 返回的派生 Logger。每个 Entry 独立持有字段，不会污染全局 Logger。
 type Entry struct{ logger *slog.Logger }
 
-// With 创建带首个业务字段的派生日志对象；命名和行为与 slog.Logger.With 对齐。
+// Default 返回服务默认日志对象；所有日志级别入口都从 Entry 提供，避免包级和实例级两套 API。
+func Default() Entry { return Entry{logger: slog.Default()} }
+
+// With 创建带首个业务字段的派生日志对象；是 Default().With 的简写，便于连续补充业务字段。
 func With(key string, value any) Entry {
-	return Entry{logger: slog.Default().With(key, value)}
+	return Default().With(key, value)
 }
 
 // With 为当前日志对象追加字段，直接复用 slog.Logger.With 的派生 Logger 语义。
@@ -32,39 +35,68 @@ func (e Entry) With(key string, value any) Entry {
 	return Entry{logger: e.slog().With(key, value)}
 }
 
-// Debug 输出无业务上下文的调试日志。
-func (e Entry) Debug(message string) { emit(context.Background(), e.slog(), slog.LevelDebug, message) }
+// Debug 输出无业务上下文的调试日志；旧调用的键值参数继续兼容，便于服务逐步迁移为 With 风格。
+func (e Entry) Debug(message string, args ...any) {
+	e.log(context.Background(), slog.LevelDebug, message, args...)
+}
 
 // Info 输出无业务上下文的普通日志。
-func (e Entry) Info(message string) { emit(context.Background(), e.slog(), slog.LevelInfo, message) }
+func (e Entry) Info(message string, args ...any) {
+	e.log(context.Background(), slog.LevelInfo, message, args...)
+}
 
 // Warn 输出无业务上下文的告警日志。
-func (e Entry) Warn(message string) { emit(context.Background(), e.slog(), slog.LevelWarn, message) }
+func (e Entry) Warn(message string, args ...any) {
+	e.log(context.Background(), slog.LevelWarn, message, args...)
+}
 
 // Error 输出无业务上下文的错误日志。
-func (e Entry) Error(message string) { emit(context.Background(), e.slog(), slog.LevelError, message) }
+func (e Entry) Error(message string, args ...any) {
+	e.log(context.Background(), slog.LevelError, message, args...)
+}
+
+// Fatal 写入进程级致命错误后退出；调用方只能在服务无法继续提供功能时使用。
+func (e Entry) Fatal(message string, args ...any) {
+	e.log(context.Background(), LevelFatal, message, args...)
+	exitProcess(1)
+}
 
 // CtxDebug 输出关联当前 Trace/Span 的调试日志，名称与包级 CtxDebug 保持一致。
-func (e Entry) CtxDebug(ctx context.Context, message string) {
-	emit(ctx, e.slog(), slog.LevelDebug, message)
+func (e Entry) CtxDebug(ctx context.Context, message string, args ...any) {
+	e.log(ctx, slog.LevelDebug, message, args...)
 }
 
 // CtxInfo 输出关联当前 Trace/Span 的普通日志，名称与包级 CtxInfo 保持一致。
-func (e Entry) CtxInfo(ctx context.Context, message string) {
-	emit(ctx, e.slog(), slog.LevelInfo, message)
+func (e Entry) CtxInfo(ctx context.Context, message string, args ...any) {
+	e.log(ctx, slog.LevelInfo, message, args...)
 }
 
 // CtxWarn 输出关联当前 Trace/Span 的告警日志，名称与包级 CtxWarn 保持一致。
-func (e Entry) CtxWarn(ctx context.Context, message string) {
-	emit(ctx, e.slog(), slog.LevelWarn, message)
+func (e Entry) CtxWarn(ctx context.Context, message string, args ...any) {
+	e.log(ctx, slog.LevelWarn, message, args...)
 }
 
 // CtxError 输出关联当前 Trace/Span 的错误日志，名称与包级 CtxError 保持一致。
-func (e Entry) CtxError(ctx context.Context, message string) {
-	emit(ctx, e.slog(), slog.LevelError, message)
+func (e Entry) CtxError(ctx context.Context, message string, args ...any) {
+	e.log(ctx, slog.LevelError, message, args...)
 }
 
-// emit 是默认日志器和 With 派生日志器唯一的写入路径，统一保证 ctx 的 Trace/Span 字段不丢失。
+// CtxFatal 写入关联当前调用的致命错误后退出，保留故障对应的 Trace/Span 供线上排障。
+func (e Entry) CtxFatal(ctx context.Context, message string, args ...any) {
+	e.log(ctx, LevelFatal, message, args...)
+	exitProcess(1)
+}
+
+// log 是 Entry 唯一的写入入口；兼容历史 printf 和键值参数，确保迁移期间日志语义不变。
+func (e Entry) log(ctx context.Context, level slog.Level, message string, args ...any) {
+	if strings.Contains(message, "%") {
+		emit(ctx, e.slog(), level, fmt.Sprintf(message, args...))
+		return
+	}
+	emit(ctx, e.slog(), level, message, keyValuesToAttrs(args)...)
+}
+
+// emit 是所有 Entry 的唯一落盘路径，统一保证 ctx 的 Trace/Span 字段不丢失。
 func emit(ctx context.Context, logger *slog.Logger, level slog.Level, message string, attrs ...slog.Attr) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -78,60 +110,6 @@ func (e Entry) slog() *slog.Logger {
 		return slog.Default()
 	}
 	return e.logger
-}
-
-// Debug 用于服务生命周期等无业务上下文的低优先级日志。
-func Debug(message string, args ...any) { log(context.Background(), slog.LevelDebug, message, args...) }
-
-// Info 用于服务生命周期等无业务上下文的普通日志。
-func Info(message string, args ...any) { log(context.Background(), slog.LevelInfo, message, args...) }
-
-// Warn 用于服务生命周期等无业务上下文的告警日志。
-func Warn(message string, args ...any) { log(context.Background(), slog.LevelWarn, message, args...) }
-
-// Error 用于服务生命周期等无业务上下文的错误日志。
-func Error(message string, args ...any) { log(context.Background(), slog.LevelError, message, args...) }
-
-// Fatal 记录无业务上下文的致命错误后结束进程。
-func Fatal(message string, args ...any) {
-	log(context.Background(), LevelFatal, message, args...)
-	exitProcess(1)
-}
-
-// CtxDebug 记录并关联当前业务 ctx 的调试日志。
-func CtxDebug(ctx context.Context, message string, args ...any) {
-	log(ctx, slog.LevelDebug, message, args...)
-}
-
-// CtxInfo 记录并关联当前业务 ctx 的普通日志。
-func CtxInfo(ctx context.Context, message string, args ...any) {
-	log(ctx, slog.LevelInfo, message, args...)
-}
-
-// CtxWarn 记录并关联当前业务 ctx 的告警日志。
-func CtxWarn(ctx context.Context, message string, args ...any) {
-	log(ctx, slog.LevelWarn, message, args...)
-}
-
-// CtxError 记录并关联当前业务 ctx 的错误日志。
-func CtxError(ctx context.Context, message string, args ...any) {
-	log(ctx, slog.LevelError, message, args...)
-}
-
-// CtxFatal 记录并关联当前业务 ctx 的致命错误后结束进程。
-func CtxFatal(ctx context.Context, message string, args ...any) {
-	log(ctx, LevelFatal, message, args...)
-	exitProcess(1)
-}
-
-func log(ctx context.Context, level slog.Level, message string, args ...any) {
-	// 兼容原有 printf 风格日志；新代码未使用占位符时，把偶数位置参数保留为可查询字段。
-	if strings.Contains(message, "%") {
-		message = fmt.Sprintf(message, args...)
-		emit(ctx, slog.Default(), level, message)
-		return
-	}
-	emit(ctx, slog.Default(), level, message, keyValuesToAttrs(args)...)
 }
 
 func keyValuesToAttrs(values []any) []slog.Attr {
