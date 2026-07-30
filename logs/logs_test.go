@@ -64,7 +64,7 @@ func TestInfoAddsTraceAndSpanIDs(t *testing.T) {
 	})
 	ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
 
-	InfoContext(ctx, "提交任务 %s", "task-1")
+	CtxInfo(ctx, "提交任务 %s", "task-1")
 
 	if len(handler.state.logs) != 1 {
 		t.Fatalf("log count = %d, want 1", len(handler.state.logs))

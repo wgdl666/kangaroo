@@ -92,28 +92,28 @@ func Fatal(message string, args ...any) {
 	exitProcess(1)
 }
 
-// DebugContext 记录并关联当前业务 ctx 的调试日志，命名与 slog.DebugContext 对齐。
-func DebugContext(ctx context.Context, message string, args ...any) {
+// CtxDebug 记录并关联当前业务 ctx 的调试日志。
+func CtxDebug(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelDebug, message, args...)
 }
 
-// InfoContext 记录并关联当前业务 ctx 的普通日志，命名与 slog.InfoContext 对齐。
-func InfoContext(ctx context.Context, message string, args ...any) {
+// CtxInfo 记录并关联当前业务 ctx 的普通日志。
+func CtxInfo(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelInfo, message, args...)
 }
 
-// WarnContext 记录并关联当前业务 ctx 的告警日志，命名与 slog.WarnContext 对齐。
-func WarnContext(ctx context.Context, message string, args ...any) {
+// CtxWarn 记录并关联当前业务 ctx 的告警日志。
+func CtxWarn(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelWarn, message, args...)
 }
 
-// ErrorContext 记录并关联当前业务 ctx 的错误日志，命名与 slog.ErrorContext 对齐。
-func ErrorContext(ctx context.Context, message string, args ...any) {
+// CtxError 记录并关联当前业务 ctx 的错误日志。
+func CtxError(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelError, message, args...)
 }
 
-// FatalContext 记录并关联当前业务 ctx 的致命错误后结束进程。
-func FatalContext(ctx context.Context, message string, args ...any) {
+// CtxFatal 记录并关联当前业务 ctx 的致命错误后结束进程。
+func CtxFatal(ctx context.Context, message string, args ...any) {
 	log(ctx, LevelFatal, message, args...)
 	exitProcess(1)
 }
