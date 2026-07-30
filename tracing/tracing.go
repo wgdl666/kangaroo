@@ -1,4 +1,5 @@
-package logs
+// Package tracing 提供业务 Span 的最小操作面；导出器和 Provider 生命周期由 telemetry 管理。
+package tracing
 
 import (
 	"context"
@@ -9,7 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Span 是统一观测入口暴露的 Span 包装，服务业务无需直接依赖 OTel 实现。
+// Span 包装 OTel Span，隐藏 SDK 细节并维持业务事件的 map 写法。
 type Span struct{ inner trace.Span }
 
 func (s *Span) SetName(name string) {
@@ -47,8 +48,6 @@ func (s *Span) SetFloat64(key string, value float64) {
 		s.inner.SetAttributes(attribute.Float64(key, value))
 	}
 }
-
-// TraceID 返回当前 Span 所属的 Trace，用于业务任务持久化和跨服务恢复。
 func (s *Span) TraceID() string {
 	if s == nil || s.inner == nil || !s.inner.SpanContext().TraceID().IsValid() {
 		return ""
@@ -56,7 +55,7 @@ func (s *Span) TraceID() string {
 	return s.inner.SpanContext().TraceID().String()
 }
 
-// AddEvent 为当前业务节点补充时间线事件；业务代码传入简洁字段映射，公共包统一适配 OTel 属性类型。
+// AddEvent 用简洁 map 写业务阶段；只转换实际支持的属性类型，避免业务方耦合 OTel attribute。
 func (s *Span) AddEvent(name string, attrs map[string]any) {
 	if s == nil || s.inner == nil {
 		return
@@ -82,43 +81,31 @@ func (s *Span) AddEvent(name string, attrs map[string]any) {
 	}
 	s.inner.AddEvent(name, trace.WithAttributes(kvs...))
 }
-
 func (s *Span) RecordErrorWithAttr(err error, key, value string) {
 	if s != nil && s.inner != nil {
 		s.inner.RecordError(err, trace.WithAttributes(attribute.String(key, value)))
 	}
 }
 
-func (l *Logger) StartSpan(ctx context.Context, name string) (context.Context, *Span) {
-	if l == nil || l.tracer == nil {
-		return ctx, nil
-	}
-	childCtx, span := l.tracer.Start(ctx, name)
-	return childCtx, &Span{inner: span}
+// StartSpan 创建当前 ctx 的子 Span；telemetry.Setup 后它会使用已安装的全局 Provider。
+func StartSpan(ctx context.Context, name string) (context.Context, *Span) {
+	child, span := otel.Tracer("").Start(ctx, name)
+	return child, &Span{inner: span}
 }
 
-// StartRootSpan 为一次独立业务请求创建根 Span，避免长连接把多个请求错误合并。
-func (l *Logger) StartRootSpan(ctx context.Context, name string) (context.Context, *Span) {
-	if l == nil || l.tracer == nil {
-		return ctx, nil
-	}
-	rootCtx, span := l.tracer.Start(ctx, name, trace.WithNewRoot())
-	return rootCtx, &Span{inner: span}
+// StartRootSpan 为一轮独立业务请求创建根 Span，避免长连接把多轮请求误合并。
+func StartRootSpan(ctx context.Context, name string) (context.Context, *Span) {
+	root, span := otel.Tracer("").Start(ctx, name, trace.WithNewRoot())
+	return root, &Span{inner: span}
 }
-
-func (l *Logger) StartSpanWithAttrs(ctx context.Context, name string, attrs map[string]string) (context.Context, *Span) {
-	if l == nil || l.tracer == nil {
-		return ctx, nil
-	}
+func StartSpanWithAttrs(ctx context.Context, name string, attrs map[string]string) (context.Context, *Span) {
 	kvs := make([]attribute.KeyValue, 0, len(attrs))
 	for key, value := range attrs {
 		kvs = append(kvs, attribute.String(key, value))
 	}
-	childCtx, span := l.tracer.Start(ctx, name, trace.WithAttributes(kvs...), trace.WithSpanKind(trace.SpanKindServer))
-	return childCtx, &Span{inner: span}
+	child, span := otel.Tracer("").Start(ctx, name, trace.WithAttributes(kvs...), trace.WithSpanKind(trace.SpanKindServer))
+	return child, &Span{inner: span}
 }
-
-// SpanFromContext 从当前业务上下文恢复 Span，用于在同一链路上记录事件和属性。
 func SpanFromContext(ctx context.Context) *Span {
 	span := trace.SpanFromContext(ctx)
 	if span == nil {
@@ -126,8 +113,6 @@ func SpanFromContext(ctx context.Context) *Span {
 	}
 	return &Span{inner: span}
 }
-
 func StartSpanFromContext(ctx context.Context, name string) (context.Context, *Span) {
-	childCtx, span := otel.Tracer("").Start(ctx, name)
-	return childCtx, &Span{inner: span}
+	return StartSpan(ctx, name)
 }
