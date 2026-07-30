@@ -19,6 +19,12 @@ var exitProcess = os.Exit
 // 该值需由应用侧的 OTel handler 映射为 OpenTelemetry 的 FATAL，不能退化成普通 ERROR。
 const LevelFatal slog.Level = slog.LevelError + 4
 
+// Field 是一条日志的不可变结构化字段；它遵循 slog.Attr，避免散装 key/value 在调用处错位。
+type Field = slog.Attr
+
+// SetKV 创建可查询的单个日志字段。字段只属于当前日志调用，不保存到全局状态，避免并发请求串值。
+func SetKV(key string, value any) Field { return slog.Any(key, value) }
+
 // Debug 用于服务生命周期等无业务上下文的低优先级日志。
 func Debug(message string, args ...any) { log(context.Background(), slog.LevelDebug, message, args...) }
 
@@ -68,7 +74,7 @@ func log(ctx context.Context, level slog.Level, message string, args ...any) {
 		ctx = context.Background()
 	}
 	attrs := traceAttrs(ctx)
-	// 兼容原有 printf 风格日志；新代码未使用占位符时，把偶数位置参数保留为可查询字段。
+	// 兼容已有 printf 与散装 key/value 调用；新代码应传 SetKV，字段会保持独立且可查询。
 	if strings.Contains(message, "%") {
 		message = fmt.Sprintf(message, args...)
 	} else {
@@ -79,13 +85,23 @@ func log(ctx context.Context, level slog.Level, message string, args ...any) {
 }
 
 func keyValuesToAttrs(values []any) []slog.Attr {
-	attrs := make([]slog.Attr, 0, len(values)/2)
-	for index := 0; index+1 < len(values); index += 2 {
+	attrs := make([]slog.Attr, 0, len(values))
+	for index := 0; index < len(values); {
+		if field, ok := values[index].(slog.Attr); ok {
+			attrs = append(attrs, field)
+			index++
+			continue
+		}
+		if index+1 >= len(values) {
+			break
+		}
 		key, ok := values[index].(string)
 		if !ok {
+			index += 2
 			continue
 		}
 		attrs = append(attrs, slog.Any(key, values[index+1]))
+		index += 2
 	}
 	return attrs
 }
