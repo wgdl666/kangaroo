@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -18,36 +19,53 @@ var exitProcess = os.Exit
 // 该值需由应用侧的 OTel handler 映射为 OpenTelemetry 的 FATAL，不能退化成普通 ERROR。
 const LevelFatal slog.Level = slog.LevelError + 4
 
-// Info 以当前 ctx 输出 Info 日志，并把当前 Trace/Span ID 作为可见结构化属性。
-// 传入 ctx 还会让已配置的 OTel slog handler 将日志关联到同一条 Trace。
-func Info(ctx context.Context, format string, args ...any) {
-	log(ctx, slog.LevelInfo, format, args...)
+// Info 以当前 ctx 输出 Info 日志；无格式化占位符时，args 按 key/value 结构化字段处理。
+func Info(ctx context.Context, message string, args ...any) {
+	log(ctx, slog.LevelInfo, message, args...)
 }
 
 // Warn 以当前 ctx 输出 Warn 日志，适用于可继续处理但需要被关注的业务异常。
-func Warn(ctx context.Context, format string, args ...any) {
-	log(ctx, slog.LevelWarn, format, args...)
+func Warn(ctx context.Context, message string, args ...any) {
+	log(ctx, slog.LevelWarn, message, args...)
 }
 
 // Error 以当前 ctx 输出 Error 日志，适用于当前操作已经失败的场景。
-func Error(ctx context.Context, format string, args ...any) {
-	log(ctx, slog.LevelError, format, args...)
+func Error(ctx context.Context, message string, args ...any) {
+	log(ctx, slog.LevelError, message, args...)
 }
 
 // Fatal 记录不可恢复的进程级错误后以退出码 1 结束进程。
 // 调用方仅应在服务无法继续提供正确结果时使用；业务请求失败应使用 Error，避免误杀服务。
-func Fatal(ctx context.Context, format string, args ...any) {
-	log(ctx, LevelFatal, format, args...)
+func Fatal(ctx context.Context, message string, args ...any) {
+	log(ctx, LevelFatal, message, args...)
 	exitProcess(1)
 }
 
-func log(ctx context.Context, level slog.Level, format string, args ...any) {
+func log(ctx context.Context, level slog.Level, message string, args ...any) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	attrs := traceAttrs(ctx)
+	// 兼容原有 printf 风格日志；新代码未使用占位符时，把偶数位置参数保留为可查询字段。
+	if strings.Contains(message, "%") {
+		message = fmt.Sprintf(message, args...)
+	} else {
+		attrs = append(attrs, keyValuesToAttrs(args)...)
+	}
 	// 使用 LogAttrs(ctx, ...) 而非无 context 的 Info，确保 OTel handler 能读取当前 SpanContext。
-	slog.LogAttrs(ctx, level, fmt.Sprintf(format, args...), attrs...)
+	slog.LogAttrs(ctx, level, message, attrs...)
+}
+
+func keyValuesToAttrs(values []any) []slog.Attr {
+	attrs := make([]slog.Attr, 0, len(values)/2)
+	for index := 0; index+1 < len(values); index += 2 {
+		key, ok := values[index].(string)
+		if !ok {
+			continue
+		}
+		attrs = append(attrs, slog.Any(key, values[index+1]))
+	}
+	return attrs
 }
 
 func traceAttrs(ctx context.Context) []slog.Attr {
