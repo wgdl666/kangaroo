@@ -125,23 +125,6 @@ func NewDiscard() *Logger {
 	return &Logger{inner: slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
-// Info 输出普通运行信息。
-func (l *Logger) Info(msg string, args ...any) { l.inner.Info(msg, args...) }
-
-// Debug 输出调试信息。
-func (l *Logger) Debug(msg string, args ...any) { l.inner.Debug(msg, args...) }
-
-// Warn 输出可继续处理的异常信息。
-func (l *Logger) Warn(msg string, args ...any) { l.inner.Warn(msg, args...) }
-
-// Error 输出当前操作失败的信息。
-func (l *Logger) Error(msg string, args ...any) { l.inner.Error(msg, args...) }
-
-// WarnContext 输出与当前 Trace/Span 关联的告警日志。
-func (l *Logger) WarnContext(ctx context.Context, msg string, args ...any) {
-	l.inner.WarnContext(ctx, msg, args...)
-}
-
 // Shutdown 在服务退出前冲刷已批量缓存的日志。
 func (l *Logger) Shutdown(ctx context.Context) error {
 	if l == nil {

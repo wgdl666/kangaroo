@@ -56,7 +56,7 @@ func (s *Span) TraceID() string {
 	return s.inner.SpanContext().TraceID().String()
 }
 
-// AddEvent 为当前业务节点补充时间线事件；仅接受常用标量，避免上报不可序列化数据。
+// AddEvent 为当前业务节点补充时间线事件；业务代码传入简洁字段映射，公共包统一适配 OTel 属性类型。
 func (s *Span) AddEvent(name string, attrs map[string]any) {
 	if s == nil || s.inner == nil {
 		return

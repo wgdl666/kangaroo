@@ -50,7 +50,7 @@ func TestInfoAddsTraceAndSpanIDs(t *testing.T) {
 	})
 	ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
 
-	Info(ctx, "提交任务 %s", "task-1")
+	CtxInfo(ctx, "提交任务 %s", "task-1")
 
 	if len(handler.logs) != 1 {
 		t.Fatalf("log count = %d, want 1", len(handler.logs))
@@ -73,7 +73,7 @@ func TestInfoWithoutSpanStillLogs(t *testing.T) {
 	slog.SetDefault(slog.New(handler))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
-	Info(context.Background(), "后台任务已启动")
+	Info("后台任务已启动")
 
 	if len(handler.logs) != 1 {
 		t.Fatalf("log count = %d, want 1", len(handler.logs))
@@ -99,7 +99,7 @@ func TestFatalLogsBeforeExiting(t *testing.T) {
 	})
 
 	// 致命错误必须先落入日志 handler，再请求结束进程，避免只退出而没有排查证据。
-	Fatal(context.Background(), "配置无法加载")
+	Fatal("配置无法加载")
 
 	if len(handler.logs) != 1 {
 		t.Fatalf("log count = %d, want 1", len(handler.logs))

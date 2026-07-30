@@ -19,29 +19,46 @@ var exitProcess = os.Exit
 // 该值需由应用侧的 OTel handler 映射为 OpenTelemetry 的 FATAL，不能退化成普通 ERROR。
 const LevelFatal slog.Level = slog.LevelError + 4
 
-// Debug 记录仅用于排查的低优先级信息，仍携带当前 ctx 的 Trace/Span 关联。
-func Debug(ctx context.Context, message string, args ...any) {
+// Debug 用于服务生命周期等无业务上下文的低优先级日志。
+func Debug(message string, args ...any) { log(context.Background(), slog.LevelDebug, message, args...) }
+
+// Info 用于服务生命周期等无业务上下文的普通日志。
+func Info(message string, args ...any) { log(context.Background(), slog.LevelInfo, message, args...) }
+
+// Warn 用于服务生命周期等无业务上下文的告警日志。
+func Warn(message string, args ...any) { log(context.Background(), slog.LevelWarn, message, args...) }
+
+// Error 用于服务生命周期等无业务上下文的错误日志。
+func Error(message string, args ...any) { log(context.Background(), slog.LevelError, message, args...) }
+
+// Fatal 记录无业务上下文的致命错误后结束进程。
+func Fatal(message string, args ...any) {
+	log(context.Background(), LevelFatal, message, args...)
+	exitProcess(1)
+}
+
+// CtxDebug 记录并关联当前业务 ctx 的调试日志。
+func CtxDebug(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelDebug, message, args...)
 }
 
-// Info 以当前 ctx 输出 Info 日志；无格式化占位符时，args 按 key/value 结构化字段处理。
-func Info(ctx context.Context, message string, args ...any) {
+// CtxInfo 记录并关联当前业务 ctx 的普通日志。
+func CtxInfo(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelInfo, message, args...)
 }
 
-// Warn 以当前 ctx 输出 Warn 日志，适用于可继续处理但需要被关注的业务异常。
-func Warn(ctx context.Context, message string, args ...any) {
+// CtxWarn 记录并关联当前业务 ctx 的告警日志。
+func CtxWarn(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelWarn, message, args...)
 }
 
-// Error 以当前 ctx 输出 Error 日志，适用于当前操作已经失败的场景。
-func Error(ctx context.Context, message string, args ...any) {
+// CtxError 记录并关联当前业务 ctx 的错误日志。
+func CtxError(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelError, message, args...)
 }
 
-// Fatal 记录不可恢复的进程级错误后以退出码 1 结束进程。
-// 调用方仅应在服务无法继续提供正确结果时使用；业务请求失败应使用 Error，避免误杀服务。
-func Fatal(ctx context.Context, message string, args ...any) {
+// CtxFatal 记录并关联当前业务 ctx 的致命错误后结束进程。
+func CtxFatal(ctx context.Context, message string, args ...any) {
 	log(ctx, LevelFatal, message, args...)
 	exitProcess(1)
 }
