@@ -33,38 +33,44 @@ func (e Entry) With(key string, value any) Entry {
 }
 
 // Debug 输出无业务上下文的调试日志。
-func (e Entry) Debug(message string) { e.log(context.Background(), slog.LevelDebug, message) }
+func (e Entry) Debug(message string) { emit(context.Background(), e.slog(), slog.LevelDebug, message) }
 
 // Info 输出无业务上下文的普通日志。
-func (e Entry) Info(message string) { e.log(context.Background(), slog.LevelInfo, message) }
+func (e Entry) Info(message string) { emit(context.Background(), e.slog(), slog.LevelInfo, message) }
 
 // Warn 输出无业务上下文的告警日志。
-func (e Entry) Warn(message string) { e.log(context.Background(), slog.LevelWarn, message) }
+func (e Entry) Warn(message string) { emit(context.Background(), e.slog(), slog.LevelWarn, message) }
 
 // Error 输出无业务上下文的错误日志。
-func (e Entry) Error(message string) { e.log(context.Background(), slog.LevelError, message) }
+func (e Entry) Error(message string) { emit(context.Background(), e.slog(), slog.LevelError, message) }
 
-// DebugContext 输出关联当前 Trace/Span 的调试日志，命名与 slog.Logger.DebugContext 对齐。
-func (e Entry) DebugContext(ctx context.Context, message string) {
-	e.log(ctx, slog.LevelDebug, message)
+// CtxDebug 输出关联当前 Trace/Span 的调试日志，名称与包级 CtxDebug 保持一致。
+func (e Entry) CtxDebug(ctx context.Context, message string) {
+	emit(ctx, e.slog(), slog.LevelDebug, message)
 }
 
-// InfoContext 输出关联当前 Trace/Span 的普通日志，命名与 slog.Logger.InfoContext 对齐。
-func (e Entry) InfoContext(ctx context.Context, message string) { e.log(ctx, slog.LevelInfo, message) }
-
-// WarnContext 输出关联当前 Trace/Span 的告警日志，命名与 slog.Logger.WarnContext 对齐。
-func (e Entry) WarnContext(ctx context.Context, message string) { e.log(ctx, slog.LevelWarn, message) }
-
-// ErrorContext 输出关联当前 Trace/Span 的错误日志，命名与 slog.Logger.ErrorContext 对齐。
-func (e Entry) ErrorContext(ctx context.Context, message string) {
-	e.log(ctx, slog.LevelError, message)
+// CtxInfo 输出关联当前 Trace/Span 的普通日志，名称与包级 CtxInfo 保持一致。
+func (e Entry) CtxInfo(ctx context.Context, message string) {
+	emit(ctx, e.slog(), slog.LevelInfo, message)
 }
 
-func (e Entry) log(ctx context.Context, level slog.Level, message string) {
+// CtxWarn 输出关联当前 Trace/Span 的告警日志，名称与包级 CtxWarn 保持一致。
+func (e Entry) CtxWarn(ctx context.Context, message string) {
+	emit(ctx, e.slog(), slog.LevelWarn, message)
+}
+
+// CtxError 输出关联当前 Trace/Span 的错误日志，名称与包级 CtxError 保持一致。
+func (e Entry) CtxError(ctx context.Context, message string) {
+	emit(ctx, e.slog(), slog.LevelError, message)
+}
+
+// emit 是默认日志器和 With 派生日志器唯一的写入路径，统一保证 ctx 的 Trace/Span 字段不丢失。
+func emit(ctx context.Context, logger *slog.Logger, level slog.Level, message string, attrs ...slog.Attr) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	e.slog().LogAttrs(ctx, level, message, traceAttrs(ctx)...)
+	attrs = append(traceAttrs(ctx), attrs...)
+	logger.LogAttrs(ctx, level, message, attrs...)
 }
 
 func (e Entry) slog() *slog.Logger {
@@ -119,18 +125,13 @@ func CtxFatal(ctx context.Context, message string, args ...any) {
 }
 
 func log(ctx context.Context, level slog.Level, message string, args ...any) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	attrs := traceAttrs(ctx)
 	// 兼容原有 printf 风格日志；新代码未使用占位符时，把偶数位置参数保留为可查询字段。
 	if strings.Contains(message, "%") {
 		message = fmt.Sprintf(message, args...)
-	} else {
-		attrs = append(attrs, keyValuesToAttrs(args)...)
+		emit(ctx, slog.Default(), level, message)
+		return
 	}
-	// 使用 LogAttrs(ctx, ...) 而非无 context 的 Info，确保 OTel handler 能读取当前 SpanContext。
-	slog.LogAttrs(ctx, level, message, attrs...)
+	emit(ctx, slog.Default(), level, message, keyValuesToAttrs(args)...)
 }
 
 func keyValuesToAttrs(values []any) []slog.Attr {

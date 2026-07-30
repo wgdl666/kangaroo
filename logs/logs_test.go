@@ -106,7 +106,7 @@ func TestEntryWithChainsFieldsAndKeepsTraceContext(t *testing.T) {
 	spanContext := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}})
 	ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
 	// 链式字段必须只写入本次日志，并与传入 ctx 的 Trace/Span 一起导出。
-	With("task_id", "task-1").With("session_id", "session-1").InfoContext(ctx, "ootd_workflow_task_created")
+	With("task_id", "task-1").With("session_id", "session-1").CtxInfo(ctx, "ootd_workflow_task_created")
 
 	got := handler.state.logs[0]
 	if got.attrs["task_id"] != "task-1" || got.attrs["session_id"] != "session-1" {
