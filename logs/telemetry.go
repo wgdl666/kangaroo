@@ -1,6 +1,5 @@
-// Package telemetry 负责服务启动时的 OpenTelemetry 导出管道和生命周期。
-// 业务日志与 Span 操作分别留在 logs、tracing，避免业务代码接触 Provider 细节。
-package telemetry
+// Package logs 统一管理服务日志、Trace 和它们到 OpenTelemetry 平台的导出生命周期。
+package logs
 
 import (
 	"context"
@@ -41,13 +40,13 @@ type Runtime struct {
 	traceProvider *sdktrace.TracerProvider
 }
 
-// Setup 安装全局 slog、Trace Provider 和 W3C 传播器，使 logs 与 tracing 自动写入同一条链路。
+// Setup 安装全局 slog、Trace Provider 和 W3C 传播器，使日志和 Span 自动写入同一条链路。
 func Setup(ctx context.Context, cfg Config) (*Runtime, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if strings.TrimSpace(cfg.ServiceName) == "" {
-		return nil, fmt.Errorf("telemetry: service name is required")
+		return nil, fmt.Errorf("logs: service name is required")
 	}
 	res := resource.NewWithAttributes(semconv.SchemaURL, semconv.ServiceName(cfg.ServiceName), semconv.ServiceVersion(cfg.ServiceVersion), attribute.String("deployment.environment.name", cfg.Environment))
 	logProvider := sdklog.NewLoggerProvider(sdklog.WithResource(res))
@@ -56,12 +55,12 @@ func Setup(ctx context.Context, cfg Config) (*Runtime, error) {
 		logExporter, err := otlploghttp.New(ctx, otlploghttp.WithEndpoint(cfg.Endpoint), otlploghttp.WithHeaders(cfg.Headers))
 		if err != nil {
 			_ = logProvider.Shutdown(ctx)
-			return nil, fmt.Errorf("telemetry: create OTLP log exporter: %w", err)
+			return nil, fmt.Errorf("logs: create OTLP log exporter: %w", err)
 		}
 		traceExporter, err := otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(cfg.Endpoint), otlptracehttp.WithHeaders(cfg.Headers))
 		if err != nil {
 			_ = logProvider.Shutdown(ctx)
-			return nil, fmt.Errorf("telemetry: create OTLP trace exporter: %w", err)
+			return nil, fmt.Errorf("logs: create OTLP trace exporter: %w", err)
 		}
 		logProvider = sdklog.NewLoggerProvider(sdklog.WithResource(res), sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter)))
 		traceProvider = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(traceExporter))

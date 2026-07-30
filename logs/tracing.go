@@ -1,5 +1,4 @@
-// Package tracing 提供业务 Span 的最小操作面；导出器和 Provider 生命周期由 telemetry 管理。
-package tracing
+package logs
 
 import (
 	"context"
@@ -87,7 +86,7 @@ func (s *Span) RecordErrorWithAttr(err error, key, value string) {
 	}
 }
 
-// StartSpan 创建当前 ctx 的子 Span；telemetry.Setup 后它会使用已安装的全局 Provider。
+// StartSpan 创建当前 ctx 的子 Span；Setup 后它会使用已安装的全局 Provider。
 func StartSpan(ctx context.Context, name string) (context.Context, *Span) {
 	child, span := otel.Tracer("").Start(ctx, name)
 	return child, &Span{inner: span}
