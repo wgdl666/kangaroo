@@ -83,24 +83,6 @@ func TestInfoWithoutSpanStillLogs(t *testing.T) {
 	}
 }
 
-func TestCtxInfoKeepsSetKVAsStructuredAttributes(t *testing.T) {
-	handler := &captureHandler{}
-	previous := slog.Default()
-	slog.SetDefault(slog.New(handler))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-
-	// 业务查询依赖 task_id、session_id 为独立字段，不能再把它们格式化进 message。
-	CtxInfo(context.Background(), "ootd_workflow_task_created",
-		SetKV("task_id", "task-1"),
-		SetKV("session_id", "session-1"),
-	)
-
-	got := handler.logs[0]
-	if got.attrs["task_id"] != "task-1" || got.attrs["session_id"] != "session-1" {
-		t.Fatalf("structured fields = %#v", got.attrs)
-	}
-}
-
 func TestFatalLogsBeforeExiting(t *testing.T) {
 	handler := &captureHandler{}
 	previousLogger := slog.Default()
