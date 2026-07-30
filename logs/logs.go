@@ -19,6 +19,11 @@ var exitProcess = os.Exit
 // 该值需由应用侧的 OTel handler 映射为 OpenTelemetry 的 FATAL，不能退化成普通 ERROR。
 const LevelFatal slog.Level = slog.LevelError + 4
 
+// Debug 记录仅用于排查的低优先级信息，仍携带当前 ctx 的 Trace/Span 关联。
+func Debug(ctx context.Context, message string, args ...any) {
+	log(ctx, slog.LevelDebug, message, args...)
+}
+
 // Info 以当前 ctx 输出 Info 日志；无格式化占位符时，args 按 key/value 结构化字段处理。
 func Info(ctx context.Context, message string, args ...any) {
 	log(ctx, slog.LevelInfo, message, args...)
