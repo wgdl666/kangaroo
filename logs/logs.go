@@ -22,13 +22,13 @@ const LevelFatal slog.Level = slog.LevelError + 4
 // Entry 包装 slog.With 返回的派生 Logger。每个 Entry 独立持有字段，不会污染全局 Logger。
 type Entry struct{ logger *slog.Logger }
 
-// SetKeyValue 创建带首个业务字段的日志对象；字段会在最终 Info/Warn/Error 时写入同一条记录。
-func SetKeyValue(key string, value any) Entry {
+// With 创建带首个业务字段的派生日志对象；命名和行为与 slog.Logger.With 对齐。
+func With(key string, value any) Entry {
 	return Entry{logger: slog.Default().With(key, value)}
 }
 
-// SetKV 为当前日志对象追加字段，直接复用 slog.Logger.With 的派生 Logger 语义。
-func (e Entry) SetKV(key string, value any) Entry {
+// With 为当前日志对象追加字段，直接复用 slog.Logger.With 的派生 Logger 语义。
+func (e Entry) With(key string, value any) Entry {
 	return Entry{logger: e.slog().With(key, value)}
 }
 
@@ -44,17 +44,21 @@ func (e Entry) Warn(message string) { e.log(context.Background(), slog.LevelWarn
 // Error 输出无业务上下文的错误日志。
 func (e Entry) Error(message string) { e.log(context.Background(), slog.LevelError, message) }
 
-// CtxDebug 输出关联当前 Trace/Span 的调试日志。
-func (e Entry) CtxDebug(ctx context.Context, message string) { e.log(ctx, slog.LevelDebug, message) }
+// DebugContext 输出关联当前 Trace/Span 的调试日志，命名与 slog.Logger.DebugContext 对齐。
+func (e Entry) DebugContext(ctx context.Context, message string) {
+	e.log(ctx, slog.LevelDebug, message)
+}
 
-// CtxInfo 输出关联当前 Trace/Span 的普通日志。
-func (e Entry) CtxInfo(ctx context.Context, message string) { e.log(ctx, slog.LevelInfo, message) }
+// InfoContext 输出关联当前 Trace/Span 的普通日志，命名与 slog.Logger.InfoContext 对齐。
+func (e Entry) InfoContext(ctx context.Context, message string) { e.log(ctx, slog.LevelInfo, message) }
 
-// CtxWarn 输出关联当前 Trace/Span 的告警日志。
-func (e Entry) CtxWarn(ctx context.Context, message string) { e.log(ctx, slog.LevelWarn, message) }
+// WarnContext 输出关联当前 Trace/Span 的告警日志，命名与 slog.Logger.WarnContext 对齐。
+func (e Entry) WarnContext(ctx context.Context, message string) { e.log(ctx, slog.LevelWarn, message) }
 
-// CtxError 输出关联当前 Trace/Span 的错误日志。
-func (e Entry) CtxError(ctx context.Context, message string) { e.log(ctx, slog.LevelError, message) }
+// ErrorContext 输出关联当前 Trace/Span 的错误日志，命名与 slog.Logger.ErrorContext 对齐。
+func (e Entry) ErrorContext(ctx context.Context, message string) {
+	e.log(ctx, slog.LevelError, message)
+}
 
 func (e Entry) log(ctx context.Context, level slog.Level, message string) {
 	if ctx == nil {
