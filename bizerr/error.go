@@ -17,7 +17,8 @@ func New(code int32, message string) *Error {
 }
 
 func Errorf(code int32, format string, args ...any) *Error {
-	return New(code, fmt.Sprintf(format, args...))
+	// Errorf 直接采集当前调用栈，避免经 New 转发后把公共错误库自身暴露为首帧。
+	return &Error{code: code, message: fmt.Sprintf(format, args...), stack: stack()}
 }
 
 func Wrap(code int32, err error, message string) *Error {

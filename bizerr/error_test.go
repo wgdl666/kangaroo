@@ -19,6 +19,17 @@ func TestNewCarriesCodeMessageAndStack(t *testing.T) {
 	}
 }
 
+func TestErrorfStackStartsAtCaller(t *testing.T) {
+	// 格式化错误的首帧必须指向实际业务调用点，不能暴露 bizerr 内部的 Errorf。
+	err := Errorf(50001, "dependency %s", "failed")
+	if !strings.Contains(err.Stack(), "TestErrorfStackStartsAtCaller") {
+		t.Fatalf("Stack() = %q, want caller frame", err.Stack())
+	}
+	if strings.Contains(err.Stack(), "bizerr.Errorf") {
+		t.Fatalf("Stack() = %q, contains internal Errorf frame", err.Stack())
+	}
+}
+
 func TestWrapKeepsCause(t *testing.T) {
 	cause := errors.New("db timeout")
 	err := Wrap(50002, cause, "create order failed")
