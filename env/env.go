@@ -1,6 +1,6 @@
 // Package env reads wgdl platform process environment variables (XX_WG_*).
 //
-// These identify the running Product/Service Module, deployment environment,
+// These identify the running service, deployment environment,
 // and region — used to address Config Center and branch regional logic.
 package env
 
@@ -11,72 +11,90 @@ import (
 )
 
 const (
-	KeyPSM    = "XX_WG_PSM"
-	KeyEnv    = "XX_WG_ENV"
-	KeyRegion = "XX_WG_REGION"
+	KeyServiceName = "XX_WG_SERVICE_NAME"
+	KeyEnv         = "XX_WG_ENV"
+	KeyRegion      = "XX_WG_REGION"
 
-	// EnvProd is the sole production environment name.
 	EnvProd = "prod"
-	// EnvPPEPrefix marks online test (PPE) environments, e.g. ppe_mirror_zby.
+	EnvDev  = "dev"
+	// EnvPPEPrefix marks preview environments; each preview has its own suffix.
 	EnvPPEPrefix = "ppe_"
 
 	RegionCN = "CN"
 	RegionSG = "SG"
+	RegionUS = "US"
+
+	ServiceHub        = "wghub"
+	ServiceUserCenter = "user-center"
+	ServiceUserMemory = "user-memory"
+	ServiceModelHub   = "modelhub"
+	ServiceWardrober  = "wardrober"
+	ServiceOps        = "wgops"
 )
 
 // Package-level platform env, populated by MustInit.
 var (
-	PSM    string // XX_WG_PSM, e.g. wg.mirror.hub
-	Env    string // XX_WG_ENV: prod | ppe_*
-	Region string // XX_WG_REGION: CN | SG
+	ServiceName string // XX_WG_SERVICE_NAME
+	Env         string // XX_WG_ENV: prod | dev | ppe_*
+	Region      string // XX_WG_REGION: CN | SG | US
 )
 
-// MustInit reads XX_WG_PSM / XX_WG_ENV / XX_WG_REGION into package globals.
+var allowedServices = map[string]struct{}{
+	ServiceHub:        {},
+	ServiceUserCenter: {},
+	ServiceUserMemory: {},
+	ServiceModelHub:   {},
+	ServiceWardrober:  {},
+	ServiceOps:        {},
+}
+
+// MustInit reads XX_WG_SERVICE_NAME / XX_WG_ENV / XX_WG_REGION into package globals.
 // Panics if any value is missing or invalid.
 func MustInit() {
-	psm := strings.TrimSpace(os.Getenv(KeyPSM))
+	serviceName := strings.TrimSpace(os.Getenv(KeyServiceName))
 	environment := strings.TrimSpace(os.Getenv(KeyEnv))
 	region := strings.TrimSpace(os.Getenv(KeyRegion))
-	if err := validate(psm, environment, region); err != nil {
+	if err := validate(serviceName, environment, region); err != nil {
 		panic(err)
 	}
-	PSM = psm
+	ServiceName = serviceName
 	Env = environment
 	Region = region
 }
 
-// Validate checks package globals against PSM / Env / Region conventions.
+// Validate checks package globals against ServiceName / Env / Region conventions.
 func Validate() error {
-	return validate(PSM, Env, Region)
+	return validate(ServiceName, Env, Region)
 }
 
-func validate(psm, environment, region string) error {
-	if psm == "" {
-		return fmt.Errorf("%s is required", KeyPSM)
+func validate(serviceName, environment, region string) error {
+	if serviceName == "" {
+		return fmt.Errorf("%s is required", KeyServiceName)
+	}
+	if _, ok := allowedServices[serviceName]; !ok {
+		return fmt.Errorf("%s %q is not a known service", KeyServiceName, serviceName)
 	}
 	if environment == "" {
 		return fmt.Errorf("%s is required", KeyEnv)
 	}
-	if environment != EnvProd && !strings.HasPrefix(environment, EnvPPEPrefix) {
-		return fmt.Errorf("%s must be %q or start with %q (got %q)", KeyEnv, EnvProd, EnvPPEPrefix, environment)
+	if environment != EnvProd && environment != EnvDev && !strings.HasPrefix(environment, EnvPPEPrefix) {
+		return fmt.Errorf("%s must be %q, %q, or start with %q (got %q)", KeyEnv, EnvProd, EnvDev, EnvPPEPrefix, environment)
 	}
 	if region == "" {
 		return fmt.Errorf("%s is required", KeyRegion)
 	}
-	if region != RegionCN && region != RegionSG {
-		return fmt.Errorf("%s must be %q or %q (got %q)", KeyRegion, RegionCN, RegionSG, region)
+	if region != RegionCN && region != RegionSG && region != RegionUS {
+		return fmt.Errorf("%s must be %q, %q, or %q (got %q)", KeyRegion, RegionCN, RegionSG, RegionUS, region)
 	}
 	return nil
 }
 
-// IsProd reports whether Env is the production environment.
 func IsProd() bool { return Env == EnvProd }
+func IsDev() bool  { return Env == EnvDev }
 
-// IsPPE reports whether Env is an online test (ppe_*) environment.
+// IsPPE reports whether Env is a preview (ppe_*). Multiple previews may exist.
 func IsPPE() bool { return strings.HasPrefix(Env, EnvPPEPrefix) }
 
-// IsCN reports whether Region is CN.
 func IsCN() bool { return Region == RegionCN }
-
-// IsSG reports whether Region is SG.
 func IsSG() bool { return Region == RegionSG }
+func IsUS() bool { return Region == RegionUS }

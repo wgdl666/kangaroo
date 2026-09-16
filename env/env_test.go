@@ -5,35 +5,44 @@ import (
 	"testing"
 )
 
-func withEnv(t *testing.T, psm, environment, region string) {
+func withEnv(t *testing.T, serviceName, environment, region string) {
 	t.Helper()
-	t.Setenv(KeyPSM, psm)
+	t.Setenv(KeyServiceName, serviceName)
 	t.Setenv(KeyEnv, environment)
 	t.Setenv(KeyRegion, region)
 }
 
 func resetGlobals() {
-	PSM, Env, Region = "", "", ""
+	ServiceName, Env, Region = "", "", ""
 }
 
-func TestMustInitOK(t *testing.T) {
+func TestMustInitPPE(t *testing.T) {
 	resetGlobals()
-	withEnv(t, "wg.mirror.hub", "ppe_mirror_zby", "CN")
+	withEnv(t, ServiceHub, "ppe_exhibition", "US")
 	MustInit()
-	if PSM != "wg.mirror.hub" || Env != "ppe_mirror_zby" || Region != "CN" {
-		t.Fatalf("got PSM=%q Env=%q Region=%q", PSM, Env, Region)
+	if ServiceName != ServiceHub || Env != "ppe_exhibition" || Region != RegionUS {
+		t.Fatalf("got ServiceName=%q Env=%q Region=%q", ServiceName, Env, Region)
 	}
-	if !IsPPE() || IsProd() {
-		t.Fatalf("ppe flags: IsPPE=%v IsProd=%v", IsPPE(), IsProd())
+	if !IsPPE() || IsProd() || IsDev() || !IsUS() {
+		t.Fatalf("flags IsPPE=%v IsProd=%v IsDev=%v IsUS=%v", IsPPE(), IsProd(), IsDev(), IsUS())
+	}
+}
+
+func TestMustInitDev(t *testing.T) {
+	resetGlobals()
+	withEnv(t, ServiceHub, EnvDev, "CN")
+	MustInit()
+	if !IsDev() || IsPPE() || IsProd() || !IsCN() {
+		t.Fatalf("dev flags: IsDev=%v IsPPE=%v IsProd=%v IsCN=%v", IsDev(), IsPPE(), IsProd(), IsCN())
 	}
 }
 
 func TestMustInitProd(t *testing.T) {
 	resetGlobals()
-	withEnv(t, "wg.mirror.hub", "prod", "CN")
+	withEnv(t, ServiceHub, EnvProd, "CN")
 	MustInit()
-	if !IsProd() || IsPPE() {
-		t.Fatalf("prod flags: IsProd=%v IsPPE=%v", IsProd(), IsPPE())
+	if !IsProd() || IsPPE() || IsDev() {
+		t.Fatalf("prod flags: IsProd=%v IsPPE=%v IsDev=%v", IsProd(), IsPPE(), IsDev())
 	}
 }
 
@@ -50,7 +59,18 @@ func TestMustInitMissingPanics(t *testing.T) {
 
 func TestMustInitInvalidEnvPanics(t *testing.T) {
 	resetGlobals()
-	withEnv(t, "wg.mirror.hub", "staging", "CN")
+	withEnv(t, ServiceHub, "staging", "CN")
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	MustInit()
+}
+
+func TestMustInitUnknownServicePanics(t *testing.T) {
+	resetGlobals()
+	withEnv(t, "wg.mirror.hub", EnvDev, "CN")
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic")
@@ -61,7 +81,7 @@ func TestMustInitInvalidEnvPanics(t *testing.T) {
 
 func TestMustInitSG(t *testing.T) {
 	resetGlobals()
-	withEnv(t, "wg.mirror.hub", "prod", RegionSG)
+	withEnv(t, ServiceHub, EnvDev, RegionSG)
 	MustInit()
 	if Region != RegionSG || !IsSG() || IsCN() {
 		t.Fatalf("region flags: Region=%q IsSG=%v IsCN=%v", Region, IsSG(), IsCN())
@@ -70,7 +90,7 @@ func TestMustInitSG(t *testing.T) {
 
 func TestMustInitInvalidRegionPanics(t *testing.T) {
 	resetGlobals()
-	withEnv(t, "wg.mirror.hub", "prod", "US")
+	withEnv(t, ServiceHub, EnvProd, "EU")
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic")

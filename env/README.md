@@ -4,9 +4,13 @@
 
 | Variable | Meaning | Example |
 |----------|---------|---------|
-| `XX_WG_PSM` | Product / Service Module | `wg.mirror.hub` |
-| `XX_WG_ENV` | Deployment environment (`prod` or `ppe_*`) | `ppe_mirror_zby` |
-| `XX_WG_REGION` | Deploy region (`CN` or `SG`) | `CN` |
+| `XX_WG_SERVICE_NAME` | Service identity | `wghub` |
+| `XX_WG_ENV` | `prod`, `dev`, or a preview `ppe_*` | `ppe_exhibition` |
+| `XX_WG_REGION` | `CN`, `SG`, or `US` | `US` |
+
+`ppe_` is the preview-class prefix. Multiple previews may exist (`ppe_exhibition`, `ppe_preview`). `IsPPE()` only means the process is in the preview class.
+
+Known service names: `wghub`, `user-center`, `user-memory`, `modelhub`, `wardrober`, `wgops`.
 
 No runtime dependencies.
 
@@ -29,14 +33,13 @@ import (
 
 func main() {
 	env.MustInit()
-	fmt.Println(env.PSM, env.Env, env.Region)
-	fmt.Println(env.IsPPE(), env.IsProd(), env.IsCN(), env.IsSG())
+	fmt.Println(env.ServiceName, env.Env, env.Region)
+	fmt.Println(env.IsPPE(), env.IsProd(), env.IsDev(), env.IsCN(), env.IsSG(), env.IsUS())
 }
 ```
 
 ## API
 
 - `MustInit()` reads and validates the three variables into package globals; panics on failure.
-- Globals: `PSM`, `Env`, `Region`.
-- `Validate()` / `IsProd()` / `IsPPE()` / `IsCN()` / `IsSG()` helpers.
-- Constants: `KeyPSM`, `KeyEnv`, `KeyRegion`, `EnvProd`, `EnvPPEPrefix`, `RegionCN`, `RegionSG`.
+- Globals: `ServiceName`, `Env`, `Region`.
+- `Validate()` / `IsProd()` / `IsDev()` / `IsPPE()` / `IsCN()` / `IsSG()` / `IsUS()`.
