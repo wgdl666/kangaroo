@@ -99,7 +99,7 @@ func TestRealGRPCUnaryAndStream(t *testing.T) {
 	t.Cleanup(func() { client.Close() })
 	ctx, span := tp.Tracer("test").Start(context.Background(), "origin")
 	defer span.End()
-	ctx = WithAttribution(WithBusiness(ctx, PromptDebug, "snapshot"), "mirror", "photo")
+	ctx = WithIdentity(WithAttribution(WithBusiness(ctx, PromptDebug, "snapshot"), "mirror", "photo"), "device-a", "user-a")
 	api := healthpb.NewHealthClient(client)
 	if _, err = api.Check(ctx, &healthpb.HealthCheckRequest{}); err != nil {
 		t.Fatal(err)
@@ -114,6 +114,9 @@ func TestRealGRPCUnaryAndStream(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		md := <-service.received
 		got := Restore(context.Background(), md)
+		if device, user := Identity(got); device != "device-a" || user != "user-a" {
+			t.Fatal("RPC lost identity", md)
+		}
 		if line, scene := Attribution(got); line != "mirror" || scene != "photo" {
 			t.Fatal("RPC lost attribution", md)
 		}

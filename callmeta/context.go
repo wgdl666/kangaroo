@@ -14,6 +14,8 @@ const (
 	MetadataKey   = "metadata"
 	BusinessLine  = "x-wg-business-line"
 	BusinessScene = "x-wg-business-scene"
+	DeviceID      = "x-wg-device-id"
+	UserID        = "x-wg-user-id"
 )
 
 type attribution struct{ line, scene string }
@@ -41,12 +43,13 @@ func Business(ctx context.Context) (key, id string) {
 	return value.key, value.id
 }
 
-// Propagator 只允许标准 TraceContext 与成对业务标识跨内部服务传播，不复制 baggage/认证头。
+// Propagator 只允许标准 TraceContext、来源身份与成对业务标识跨内部服务传播，不复制 baggage/认证头。
 // TraceContext 必须按当前 Span 重新注入，不能把入口 traceparent 原样转发。
 type Propagator struct{}
 
 func (Propagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
 	propagation.TraceContext{}.Inject(ctx, carrier)
+	injectIdentity(ctx, carrier)
 	if line, scene := Attribution(ctx); line != "" {
 		carrier.Set(BusinessLine, line)
 		carrier.Set(BusinessScene, scene)
@@ -58,6 +61,7 @@ func (Propagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier
 }
 func (Propagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
 	ctx = propagation.TraceContext{}.Extract(ctx, carrier)
+	ctx = WithIdentity(ctx, identityValue(carrier.Get(DeviceID)), identityValue(carrier.Get(UserID)))
 	key, id := carrier.Get(BusinessKey), carrier.Get(BusinessID)
 	if key == "" || id == "" {
 		key, id = "", ""
@@ -65,7 +69,7 @@ func (Propagator) Extract(ctx context.Context, carrier propagation.TextMapCarrie
 	return WithAttribution(WithBusiness(ctx, key, id), carrier.Get(BusinessLine), carrier.Get(BusinessScene))
 }
 func (Propagator) Fields() []string {
-	return []string{"traceparent", "tracestate", BusinessKey, BusinessID, BusinessLine, BusinessScene}
+	return []string{"traceparent", "tracestate", BusinessKey, BusinessID, BusinessLine, BusinessScene, DeviceID, UserID}
 }
 
 // Capture 用同一协议持久化上下文；不保存 deadline 或取消状态。
@@ -148,6 +152,7 @@ type RequestBusinessPropagator struct{}
 
 func (RequestBusinessPropagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
 	propagation.TraceContext{}.Inject(ctx, carrier)
+	injectIdentity(ctx, carrier)
 	if key, id := Business(ctx); key != "" && id != "" {
 		carrier.Set(BusinessKey, key)
 		carrier.Set(BusinessID, id)
@@ -155,6 +160,7 @@ func (RequestBusinessPropagator) Inject(ctx context.Context, carrier propagation
 }
 func (RequestBusinessPropagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
 	ctx = propagation.TraceContext{}.Extract(ctx, carrier)
+	ctx = WithIdentity(ctx, identityValue(carrier.Get(DeviceID)), identityValue(carrier.Get(UserID)))
 	// ModelHub 边界沿用成对关联契约，半对标识不能绑定草稿或残留上一请求的关联。
 	key, id := carrier.Get(BusinessKey), carrier.Get(BusinessID)
 	if key == "" || id == "" {
@@ -163,5 +169,5 @@ func (RequestBusinessPropagator) Extract(ctx context.Context, carrier propagatio
 	return WithBusiness(ctx, key, id)
 }
 func (RequestBusinessPropagator) Fields() []string {
-	return []string{"traceparent", "tracestate", BusinessKey, BusinessID}
+	return []string{"traceparent", "tracestate", BusinessKey, BusinessID, DeviceID, UserID}
 }

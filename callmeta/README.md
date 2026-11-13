@@ -14,3 +14,9 @@ WG 跨服务调用的共享传播协议。消费者在 `go.mod` 中固定本模�
 每次发送使用新 carrier；`Inject` 不清理复用 carrier 上的旧键。HTTP 使用 `HTTPHeaders` 适配调试关联键，避免含下划线的请求头在网关被丢弃。
 
 本地验证：`GOWORK=off go test -race -count=1 ./...`。消费者发布前以 `GOWORK=off go list -m -json github.com/wgdl666/kangaroo/callmeta` 核对真实版本和空 `Replace`，再运行对应服务测试。
+
+## 来源身份
+
+`WithIdentity(ctx, deviceID, userID)` 冻结调用发起者，使用 `x-wg-device-id` / `x-wg-user-id` 跨 gRPC、HTTP、MQ 和任务 metadata 传播。两种 Propagator 均包含身份。空值有效；提取时清除父上下文中的旧身份，不用业务 owner/target 用户补齐，也不把该字段当作认证凭据。
+
+Hub 在输入 Runtime 冻结时绑定；长任务保存首次受理上下文，恢复/查询不能替换原身份。`AnnotateSpan` 只用于已创建的本次执行 span，不在冻结快照时改共享父 span。GRPCServerHandler 自动标注服务端 span。HTTP 出站仅在内部服务边界显式注入，禁止把用户身份全局发给第三方供应商。
